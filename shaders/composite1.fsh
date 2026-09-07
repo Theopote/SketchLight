@@ -15,6 +15,9 @@ uniform float viewHeight;
 
 varying vec2 texcoord;
 
+#define OUTLINE_STRENGTH 1.0 // [0.25 0.5 0.75 1.0]
+#define SHOW_NORMAL_EDGES
+
 /* DRAWBUFFERS:0 */
 
 void main() {
@@ -49,20 +52,24 @@ void main() {
     }
     float depthEdge = smoothstep(0.0005, 0.002, length(vec2(depthGx, depthGy)));
 
-    vec3 normalCenter = texture2D(colortex1, texcoord).rgb * 2.0 - 1.0;
     float normalGx = 0.0;
     float normalGy = 0.0;
+#ifdef SHOW_NORMAL_EDGES
+    vec3 normalCenter = texture2D(colortex1, texcoord).rgb * 2.0 - 1.0;
     for (int i = 0; i < 8; i++) {
         vec3 normal = texture2D(colortex1, texcoord + offsets[i]).rgb * 2.0 - 1.0;
         float difference = 1.0 - dot(normal, normalCenter);
         normalGx += difference * kernelX[i];
         normalGy += difference * kernelY[i];
     }
+#endif
     float normalEdge = smoothstep(0.05, 0.2, length(vec2(normalGx, normalGy)));
 
-    float edge = max(depthEdge, normalEdge * 0.6);
+    float edge = clamp(max(depthEdge, normalEdge * 0.6) * OUTLINE_STRENGTH, 0.0, 1.0);
     vec3 celColor = texture2D(colortex0, texcoord).rgb;
-    vec3 outlineColor = vec3(0.05, 0.05, 0.05);
+    float celLuminance = dot(celColor, vec3(0.2126, 0.7152, 0.0722));
+    vec3 desaturatedColor = mix(celColor, vec3(celLuminance), 0.65);
+    vec3 outlineColor = desaturatedColor * 0.22 + vec3(0.015);
 
     gl_FragData[0] = vec4(mix(celColor, outlineColor, edge), 1.0);
 }
