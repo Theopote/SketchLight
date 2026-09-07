@@ -12,6 +12,9 @@ uniform sampler2D depthtex0;
 
 uniform float viewWidth;
 uniform float viewHeight;
+uniform mat4 gbufferProjectionInverse;
+uniform mat4 gbufferModelViewInverse;
+uniform vec3 cameraPosition;
 
 varying vec2 texcoord;
 
@@ -20,8 +23,39 @@ varying vec2 texcoord;
 
 /* DRAWBUFFERS:0 */
 
+float hash(vec2 position) {
+    return fract(sin(dot(position, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float valueNoise(vec2 position) {
+    vec2 cell = floor(position);
+    vec2 fraction = fract(position);
+    fraction = fraction * fraction * (3.0 - 2.0 * fraction);
+
+    return mix(
+        mix(hash(cell), hash(cell + vec2(1.0, 0.0)), fraction.x),
+        mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0, 1.0)), fraction.x),
+        fraction.y
+    );
+}
+
+vec3 worldPositionFromDepth(vec2 screenPosition, float depth) {
+    vec4 clipPosition = vec4(screenPosition * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 viewPosition = gbufferProjectionInverse * clipPosition;
+    viewPosition /= viewPosition.w;
+
+    return (gbufferModelViewInverse * viewPosition).xyz + cameraPosition;
+}
+
 void main() {
     vec2 texel = vec2(1.0 / viewWidth, 1.0 / viewHeight);
+    float centerDepth = texture2D(depthtex0, texcoord).r;
+    vec3 worldPosition = worldPositionFromDepth(texcoord, centerDepth);
+    vec2 wobble = vec2(
+        valueNoise(worldPosition.xz * 0.12),
+        valueNoise(worldPosition.xz * 0.12 + vec2(19.7, 43.2))
+    ) - 0.5;
+    vec2 sampleCoord = clamp(texcoord + wobble * texel * 0.8, texel * 0.5, 1.0 - texel * 0.5);
 
     vec2 offsets[8];
     offsets[0] = vec2(-texel.x, -texel.y);
@@ -46,7 +80,7 @@ void main() {
     float depthGx = 0.0;
     float depthGy = 0.0;
     for (int i = 0; i < 8; i++) {
-        float d = texture2D(depthtex0, texcoord + offsets[i]).r;
+        float d = texture2D(depthtex0, sampleCoord + offsets[i]).r;
         depthGx += d * kernelX[i];
         depthGy += d * kernelY[i];
     }
@@ -55,9 +89,9 @@ void main() {
     float normalGx = 0.0;
     float normalGy = 0.0;
 #ifdef SHOW_NORMAL_EDGES
-    vec3 normalCenter = texture2D(colortex1, texcoord).rgb * 2.0 - 1.0;
+    vec3 normalCenter = texture2D(colortex1, sampleCoord).rgb * 2.0 - 1.0;
     for (int i = 0; i < 8; i++) {
-        vec3 normal = texture2D(colortex1, texcoord + offsets[i]).rgb * 2.0 - 1.0;
+        vec3 normal = texture2D(colortex1, sampleCoord + offsets[i]).rgb * 2.0 - 1.0;
         float difference = 1.0 - dot(normal, normalCenter);
         normalGx += difference * kernelX[i];
         normalGy += difference * kernelY[i];
