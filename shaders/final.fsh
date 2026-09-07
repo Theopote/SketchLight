@@ -1,35 +1,24 @@
 /*
  * final — output pass
- * Currently: reads the outlined scene from colortex0 and lays a
- * cheap procedural grain over it to fake "paper texture". This is
- * a placeholder — replace with a proper cel-shading quantization
- * pass (ideally its own composite1 stage) plus a real paper/canvas
- * texture sampled via a custom texture declared in shaders.properties.
  *
- * TODO for you / Cursor:
- *   - Move cel-shading (lighting quantized to N bands) into its own
- *     composite1.fsh BEFORE the edge pass, so edges are drawn on top
- *     of already-flattened lighting, not on raw scene color.
- *   - Swap the procedural `hash()` grain for a tiled paper texture.
- *   - Add a subtle vignette / desaturation to sell the sketch look.
+ * Applies a tiled paper texture to the cel-shaded, outlined scene.
  */
 #version 120
 
 uniform sampler2D colortex0;
-uniform float viewWidth;
-uniform float viewHeight;
+uniform sampler2D paperTexture;
 
 varying vec2 texcoord;
 
-float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
+#define PAPER_GRAIN_STRENGTH 0.08 // [0.0 0.04 0.08 0.12]
 
 void main() {
     vec3 color = texture2D(colortex0, texcoord).rgb;
+    vec3 paperColor = texture2D(paperTexture, texcoord * 4.0).rgb;
+    float paperLuminance = dot(paperColor, vec3(0.2126, 0.7152, 0.0722));
+    float paperModulation = 1.0 + (paperLuminance - 0.5) * 2.0 * PAPER_GRAIN_STRENGTH;
 
-    float grain = hash(texcoord * vec2(viewWidth, viewHeight));
-    color += (grain - 0.5) * 0.02;
+    color *= paperModulation;
 
     gl_FragColor = vec4(color, 1.0);
 }
